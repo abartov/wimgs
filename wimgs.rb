@@ -98,6 +98,7 @@ unless articles_exists && images_exists && cfg[:resume] == true # if either tabl
   puts "Empty database created."
 end
 
+# check dump status
 articles_count = db.execute("SELECT COUNT(id) FROM articles")[0]['COUNT(id)']
 if articles_count != articles.length # stale DB, try to complement it from current list and weed out stale rows
   print "stale database!\nAdding articles from list, removing articles no longer on list, preserving status of existing article rows... "
@@ -123,11 +124,9 @@ partial_count = db.execute("SELECT COUNT(id) FROM articles WHERE status = ?", PA
 done_count = db.execute("SELECT COUNT(id) FROM articles WHERE status = ?", DONE)[0]['COUNT(id)']
 puts "Stats: #{articles_count} total, #{done_count} done, #{partial_count} partial, #{none_count} not started."
 
-# check dump status
-
 exit if cfg[:status] # in which case we're done! :)
 
-# TODO: collect image file names
+# collect image file names through Mediawiki API
 puts "Completing image lists for #{none_count} articles and storing image file names in DB..."
 db.execute("SELECT id, title FROM articles WHERE status = ?", 1) do |row|
   imgs = mw.images(row['title'])
@@ -142,7 +141,22 @@ db.execute("SELECT id, title FROM articles WHERE status = ?", 1) do |row|
     puts("No images in article #{row['title']}")
   end
 end
+puts '-='*3 + Time.now.to_s + '-='*20
+puts 'populated database with image names for all articles in the list!'
+puts '-='*35
+
 # TODO: download remaining items, marking status after every download
+
+images_count = db.execute("SELECT COUNT(id) FROM images")[0]['COUNT(id)']
+none_count = db.execute("SELECT COUNT(id) FROM images WHERE status = ?", NONE)[0]['COUNT(id)']
+done_count = db.execute("SELECT COUNT(id) FROM images WHERE status = ?", DONE)[0]['COUNT(id)']
+missing_count = db.execute("SELECT COUNT(id) FROM images WHERE status = ?", MISSING)[0]['COUNT(id)']
+puts "of #{images_count} known images:\n  #{done_count} have been downloaded\n  #{missing_count} were not found when we tried\n  #{none_count} are yet to be downloaded."
+db.execute("SELECT id, title FROM articles WHERE status <> ?", DONE) do |article|
+  # TODO: attempt to retrieve all non-missing images
+  # TODO: update article status
+end
+
 # TODO: finalize DB, report results
 
 puts "wimgs done!"
