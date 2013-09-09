@@ -11,7 +11,7 @@ require 'getoptlong'
 require 'media_wiki'
 require 'sqlite3'
 
-VERSION = "0.1 2013-07-23"
+VERSION = "0.1 2013-09-08"
 NONE = 1
 PARTIAL = 2
 DONE = 3
@@ -98,31 +98,29 @@ unless articles_exists && images_exists && cfg[:resume] == true # if either tabl
   puts "Empty database created."
 end
 
-articles_count = db.execute("SELECT COUNT(id) FROM articles")[0]
+articles_count = db.execute("SELECT COUNT(id) FROM articles")[0]['COUNT(id)']
 if articles_count != articles.length # stale DB, try to complement it from current list and weed out stale rows
   print "stale database!\nAdding articles from list, removing articles no longer on list, preserving status of existing article rows... "
   db.execute("SELECT id, title FROM articles") do |row|
-    puts "DBG: title: #{row[:title]}"
-    unless articles.include?(row[:title]) 
-      db.execute("DELETE FROM articles WHERE id = #{row[:id]}") # delete DB row if not in current list
-      db.execute("DELETE FROM images WHERE article_id = #{row[:id]}")
+    puts "DBG: title: #{row['title']}"
+    unless articles.include?(row['title']) 
+      db.execute("DELETE FROM articles WHERE id = #{row['id']}") # delete DB row if not in current list
+      db.execute("DELETE FROM images WHERE article_id = #{row['id']}")
     else
-      articles.delete(row[:title]) # exists in DB, remove from list to leave only ones needing to be added
+      articles.delete(row['title']) # exists in DB, remove from list to leave only ones needing to be added
     end
   end
   articles.each {|a| # add missing articles to DB
    db.execute("INSERT INTO articles VALUES (NULL, ?, ?)", a, NONE)
   }
-  # get stats of updated DB
-  articles_count = db.execute("SELECT COUNT(id) FROM articles")[0]
-  none_count = db.execute("SELECT COUNT(id) FROM articles WHERE status = ?", NONE)[0]
-  partial_count = db.execute("SELECT COUNT(id) FROM articles WHERE status = ?", PARTIAL)[0]
-  done_count = db.execute("SELECT COUNT(id) FROM articles WHERE status = ?", DONE)[0]
-
   puts "done!"
 else
   puts "articles table okay... "
 end
+articles_count = db.execute("SELECT COUNT(id) FROM articles")[0]['COUNT(id)']
+none_count = db.execute("SELECT COUNT(id) FROM articles WHERE status = ?", NONE)[0]['COUNT(id)']
+partial_count = db.execute("SELECT COUNT(id) FROM articles WHERE status = ?", PARTIAL)[0]['COUNT(id)']
+done_count = db.execute("SELECT COUNT(id) FROM articles WHERE status = ?", DONE)[0]['COUNT(id)']
 puts "Stats: #{articles_count} total, #{done_count} done, #{partial_count} partial, #{none_count} not started."
 
 # check dump status
@@ -132,16 +130,16 @@ exit if cfg[:status] # in which case we're done! :)
 # TODO: collect image file names
 puts "Completing image lists for #{none_count} articles and storing image file names in DB..."
 db.execute("SELECT id, title FROM articles WHERE status = ?", 1) do |row|
-  imgs = mw.images(row[:title])
+  imgs = mw.images(row['title'])
   unless imgs.nil?
     imgs.each do |img|
-      db.execute("INSERT INTO images VALUES (NULL, ?, ?, ?, NULL)", row[:id], img, NONE)
+      db.execute("INSERT INTO images VALUES (NULL, ?, ?, ?, NULL)", row['id'], img, NONE)
     end
-    db.execute("UPDATE TABLE articles SET status = ? WHERE id = ?", PARTIAL, row[:id]) 
-    puts("Noted #{imgs.length} images in article #{row[:title]}")
+    db.execute("UPDATE articles SET status = ? WHERE id = ?", PARTIAL, row['id']) 
+    puts("Noted #{imgs.length} images in article #{row['title']}")
   else
-    db.execute("UPDATE TABLE articles SET status = ? WHERE id = ?", DONE, row[:id])
-    puts("No images in article #{row[:title]}")
+    db.execute("UPDATE articles SET status = ? WHERE id = ?", DONE, row['id'])
+    puts("No images in article #{row['title']}")
   end
 end
 # TODO: download remaining items, marking status after every download
