@@ -1,2 +1,4 @@
-wimgs
+wimgs - Wiki images downloader
 =====
+
+
