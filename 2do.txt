@@ -1,3 +1,4 @@
 - implement lockfiles and a master.pid file to support parallelizing with (only) the master doing the DB population phase. (have instances start up with a random short delay)
 - implement lock-protected row-fetching so multiple instances can download images
+- fetch and somehow handle image descriptions, to preserve attribution and comply with CC license terms.
 
