@@ -36,9 +36,13 @@ Usage:
 
  wimgs --wiki commons.wikimedia.org --category "Images from Wiki Loves Africa 2014 in Ghana" --images-dir /home/moose/wlm_gh/images
  
-2. To NOT resume an interrupted dump, add the --no-resume (or -r) argument
+4. To NOT download the full/original resolution, but a given width, specify the width using --width:
 
-3. To only check and show the status of a dump, add the --status (or -s) argument.  Nothing will be downloaded.
+ wimgs --wiki tr.wikipedia.org --articles my_favorite_turkish_articles.txt --width 800
+
+5. To NOT resume an interrupted dump, add the --no-resume (or -r) argument
+
+6. To only check and show the status of a dump, add the --status (or -s) argument.  Nothing will be downloaded.
 
 NOTE: wimgs will create a sqlite3 database in the current working directory named wimgs.db.  If the database already exists, wimgs will attempt to resume the dump unless instructed not to, in which case the database will be recreated and any existing image files overwritten.
 
@@ -48,7 +52,7 @@ To report issues or contribute to the code, see http://github.com/abartov/wimgs
 end
 def valid_config?(dbcfg, cfg, mode)
   return false if dbcfg[:mode] != mode
-  [:wiki, :list, :resolution, :imgdir].each {|s| return false if dbcfg[s] != cfg[s] }
+  [:wiki, :list, :width, :imgdir].each {|s| return false if dbcfg[s] != cfg[s] }
   return true
 end
 
@@ -85,8 +89,8 @@ def prepare_db(cfg, mode)
       db.execute("DROP TABLE images;")
     rescue
     end
-    db.execute("CREATE TABLE config (mode varchar(10), wiki varchar(200), category varchar(400), list varchar(400), imgdir varchar(400), resolution varchar(10));")
-    db.execute("INSERT INTO config VALUES (?, ?, ?, ?, ?, ?);", mode, cfg[:wiki], cfg[:category], cfg[:list], cfg[:imgdir], cfg[:resolution])
+    db.execute("CREATE TABLE config (mode varchar(10), wiki varchar(200), category varchar(400), list varchar(400), imgdir varchar(400), width varchar(10));")
+    db.execute("INSERT INTO config VALUES (?, ?, ?, ?, ?, ?);", mode, cfg[:wiki], cfg[:category], cfg[:list], cfg[:imgdir], cfg[:width])
     db.execute("CREATE TABLE articles (id integer primary key autoincrement, title varchar(1000), status int);")
     db.execute("CREATE TABLE images (id integer primary key autoincrement, article_id int, filename varchar(1000), status int, filepath varchar(1000))")
     puts "Empty database created."
@@ -105,15 +109,19 @@ end
 
 def get_image(mw, cfg, img)
   begin
-    filename = img[5..-1]
-    if cfg[:resolution].nil? # then download full resolution
+    filename = img['filename'][5..-1]
+    outfile = cfg[:imgdir]+"/#{filename}"
+    if cfg[:width].nil? # then download full resolution
       rawfile = mw.download(filename)
-    else
+      File.open(outfile, 'wb') {|f| f.write(rawfile) }
+    else # use thumb.php
+      filename = CGI.escape(filename)
+      puts "filename: #{filename}"
+      `wget -O "#{outfile}" "http://#{cfg[:wiki]}/w/thumb.php?f=#{filename}&w=#{cfg[:width]}"`
+      return nil unless $?.success?
       # TODO
     end
-    outfile = cfg[:imgdir]+"/#{filename}"
-    File.open(outfile, 'wb') {|f| f.write(rawfile) }
-    img[:filepath] = outfile
+    img['filepath'] = outfile
     return img
   rescue
     return nil # failed download handled by caller
@@ -121,7 +129,7 @@ def get_image(mw, cfg, img)
 end
 
 # main
-cfg = { :list => nil, :imgdir => './images', :resume => true, :status => false, :wiki => nil, :resolution => nil, :category => nil }
+cfg = { :list => nil, :imgdir => './images', :resume => true, :status => false, :wiki => nil, :width => nil, :category => nil }
 
 opts = GetoptLong.new(
   [ '--help', '-h', GetoptLong::NO_ARGUMENT ],
@@ -131,7 +139,7 @@ opts = GetoptLong.new(
   [ '--no-resume', '-r', GetoptLong::NO_ARGUMENT],
   [ '--status', '-s', GetoptLong::NO_ARGUMENT],
   [ '--wiki', '-w', GetoptLong::REQUIRED_ARGUMENT],
-  [ '--resolution', '-x', GetoptLong::OPTIONAL_ARGUMENT]
+  [ '--width', '-x', GetoptLong::OPTIONAL_ARGUMENT]
 )
 
 opts.each {|opt, arg|
@@ -150,8 +158,8 @@ opts.each {|opt, arg|
       cfg[:imgdir] = arg
     when '--category'
       cfg[:category] = arg.gsub(' ','_')
-    when '--resolution'
-      cfg[:resolution] = arg
+    when '--width'
+      cfg[:width] = arg
   end
 }
 
@@ -162,27 +170,27 @@ mode = cfg[:category].nil? ? 'articles' : 'category' # then articles mode
 db = prepare_db(cfg, mode)
 
 # initialize resources
-mw = MediaWiki::Gateway.new("http://#{cfg}/w/api.php")
+mw = MediaWiki::Gateway.new("http://#{cfg[:wiki]}/w/api.php")
 
 if mode == 'category'
   print "reading category image list... "
-  debugger
   resp = mw.category_members("Category:#{cfg[:category]}")
   files = []
   resp.each {|r| files << r if r[0..4] == 'File:'}
   print "done!\nInserting into DB... "
   files.each {|img| 
+    res = nil
     begin
-      db.execute("SELECT id FROM images WHERE filename = ?", img)[0] # don't insert dupes
+      res = db.execute("SELECT id FROM images WHERE filename = ?", img)[0] # don't insert dupes
     rescue
-      db.execute("INSERT INTO images VALUES (NULL, NULL, ?, ?, NULL)", img, NONE)
     end
+    db.execute("INSERT INTO images VALUES (NULL, NULL, ?, ?, NULL)", img, NONE) if res.nil?
   }
   puts "done!"
   images_count = db.execute("SELECT COUNT(id) FROM images")[0]['COUNT(id)']
   done_count = db.execute("SELECT COUNT(id) FROM images WHERE status = ?", DONE)[0]['COUNT(id)']
   puts "Stats: #{images_count} total images in category, #{done_count} downloaded in previous runs so far."
-  exit if cfg[:status] # in which case we're done! :)
+  exit 0 if cfg[:status] # in which case we're done! :)
 else
   print "reading article list... "
   articles = File.open(cfg[:list], 'r:UTF-8').read.split "\n" # read article list
@@ -215,7 +223,7 @@ else
   done_count = db.execute("SELECT COUNT(id) FROM articles WHERE status = ?", DONE)[0]['COUNT(id)']
   puts "Stats: #{articles_count} total, #{done_count} done, #{partial_count} partial, #{none_count} not started."
 
-  exit if cfg[:status] # in which case we're done! :)
+  exit 0 if cfg[:status] # in which case we're done! :)
 
   # collect image file names through Mediawiki API
   puts "Completing image lists for #{none_count} articles and storing image file names in DB..."
@@ -247,15 +255,17 @@ else # category
   puts "Downloading #{stats[:todo]} remaining images... (#{stats[:missing]} missing so far)"
   i = 0
   missing = stats[:missing]
-  db.execute("SELECT id, filename, status FROM images WHERE status <> ?", DONE) do |img|
-    if (img = get_image(mw, cfg, img))
-      db.execute("UPDATE images SET status = ?, filepath = ? WHERE id = ?", DONE, img['filepath'], img['id'])
+  imgs = db.execute("SELECT id, filename, status FROM images WHERE status <> ?", DONE) 
+  imgs.each do |img|
+    updimg = get_image(mw, cfg, img)
+    unless updimg.nil?
+      db.execute("UPDATE images SET status = ?, filepath = ? WHERE id = ?", DONE, updimg['filepath'], img['id'])
       i += 1
     else
-      db.execute("UPDATE images SET status = ?, WHERE id = ?", MISSING, img['id'])
+      db.execute("UPDATE images SET status = ? WHERE id = ?", MISSING, img['id'])
       missing += 1
     end
-    puts "==> #{i.to_s} images downloaded so far (#{missing.to_s} missing)"
+    puts "==> #{i.to_s} images downloaded so far (#{missing.to_s} missing)" if i % 3 == 0
   end
 end
 
