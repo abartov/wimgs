@@ -17,7 +17,7 @@ Usage:
  
 3. To NOT download the full/original resolution, but a given width, specify the maximum width using --width:
 
- wimgs --wiki tr.wikipedia.org --articles my_favorite_turkish_articles.txt --width 800
+ ruby wimgs.rb --wiki tr.wikipedia.org --articles my_favorite_turkish_articles.txt --width 800
 
 4. To NOT resume an interrupted dump, add the --no-resume (or -r) argument
 
