@@ -8,7 +8,8 @@
 
 require 'rubygems'
 require 'getoptlong'
-require 'media_wiki'
+require 'mediawiki_api'
+#require 'media_wiki'
 require 'sqlite3'
 
 VERSION = "0.1 2015-01-13"
@@ -36,7 +37,7 @@ Usage:
 
  wimgs --wiki commons.wikimedia.org --category "Images from Wiki Loves Africa 2014 in Ghana" --images-dir /home/moose/wlm_gh/images
  
-4. To NOT download the full/original resolution, but a given width, specify the width using --width:
+4. To NOT download the full/original resolution, but a given width, specify the maximum width using --width:
 
  wimgs --wiki tr.wikipedia.org --articles my_favorite_turkish_articles.txt --width 800
 
@@ -107,20 +108,37 @@ def print_stats(db)
   return { :total => images_count, :done => done_count, :missing => missing_count, :todo => none_count}
 end
 
+def category_files(mw, cat)
+  ret = []
+  last_continue = ''
+  done = false
+  while not done do
+    opts = {cmtitle: "Category:#{cat}", cmlimit: 500, cmtype: 'file', continue: '', cmcontinue: last_continue}
+    r = mw.list(:categorymembers, opts)
+    ret += r.data.map {|item| item["title"]}
+    unless r['continue'] # no need to continue
+      done = true
+    else
+      last_continue = r['continue']['cmcontinue']
+    end
+  end
+  return ret
+end
+
 def get_image(mw, cfg, img)
   begin
     filename = img['filename'][5..-1]
     outfile = cfg[:imgdir]+"/#{filename}"
-    if cfg[:width].nil? # then download full resolution
-      rawfile = mw.download(filename)
-      File.open(outfile, 'wb') {|f| f.write(rawfile) }
-    else # use thumb.php
-      filename = CGI.escape(filename)
-      puts "filename: #{filename}"
-      `wget -O "#{outfile}" "http://#{cfg[:wiki]}/w/thumb.php?f=#{filename}&w=#{cfg[:width]}"`
-      return nil unless $?.success?
-      # TODO
+    opts = {iiprop: "url", titles: "#{img['filename']}"}
+    key = "url"
+    unless cfg[:width].nil? # download full resolution if no thumbnail width specified
+      opts.merge!({iiurlwidth: cfg[:width]})
+      key = "thumburl"
     end
+    ii = mw.prop(:imageinfo, opts)
+    url = ii.data["pages"][ii.data["pages"].keys[0]]["imageinfo"][0][key] # if actual width <= cfg[:width], the original image would be in thumburl
+    `wget -O "#{outfile}" "#{url}"`
+    return nil unless $?.success?
     img['filepath'] = outfile
     return img
   rescue
@@ -170,11 +188,11 @@ mode = cfg[:category].nil? ? 'articles' : 'category' # then articles mode
 db = prepare_db(cfg, mode)
 
 # initialize resources
-mw = MediaWiki::Gateway.new("http://#{cfg[:wiki]}/w/api.php")
+mw = MediawikiApi::Client.new("http://#{cfg[:wiki]}/w/api.php")
 
 if mode == 'category'
   print "reading category image list... "
-  resp = mw.category_members("Category:#{cfg[:category]}")
+  resp = category_files(mw, "#{cfg[:category]}") 
   files = []
   resp.each {|r| files << r if r[0..4] == 'File:'}
   print "done!\nInserting into DB... "
@@ -228,7 +246,7 @@ else
   # collect image file names through Mediawiki API
   puts "Completing image lists for #{none_count} articles and storing image file names in DB..."
   db.execute("SELECT id, title FROM articles WHERE status = ?", 1) do |row|
-    imgs = mw.images(row['title'])
+    imgs = mw.images(row['title']) # switch API
     unless imgs.nil?
       imgs.each do |img|
         db.execute("INSERT INTO images VALUES (NULL, ?, ?, ?, NULL)", row['id'], img, NONE)
@@ -259,10 +277,14 @@ else # category
   imgs.each do |img|
     updimg = get_image(mw, cfg, img)
     unless updimg.nil?
+      db.transaction
       db.execute("UPDATE images SET status = ?, filepath = ? WHERE id = ?", DONE, updimg['filepath'], img['id'])
+      db.commit
       i += 1
     else
+      db.transaction
       db.execute("UPDATE images SET status = ? WHERE id = ?", MISSING, img['id'])
+      db.commit
       missing += 1
     end
     puts "==> #{i.to_s} images downloaded so far (#{missing.to_s} missing)" if i % 3 == 0
