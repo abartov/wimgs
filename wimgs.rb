@@ -188,7 +188,7 @@ mode = cfg[:category].nil? ? 'articles' : 'category' # then articles mode
 db = prepare_db(cfg, mode)
 
 # initialize resources
-mw = MediawikiApi::Client.new("http://#{cfg[:wiki]}/w/api.php")
+mw = MediawikiApi::Client.new("https://#{cfg[:wiki]}/w/api.php")
 
 if mode == 'category'
   print "reading category image list... "
