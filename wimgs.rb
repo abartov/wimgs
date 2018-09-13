@@ -23,12 +23,12 @@ def usage
   puts <<-EOF
 wimgs - Wiki images bulk downloader - version #{VERSION}
 
-Usage: 
+Usage:
 
 1. To dump all images for a set of articles with titles listed in UTF-8 in <fname> (one per line), from Wiki <wiki>, to directory <dumpdir>:
 
  wimgs --wiki <wiki> --articles <fname> --images-dir <dumpdir>
- Example: wimgs --wiki en.wikipedia.org --articles my_favorite_articles.txt --images-dir /home/moose/dump/images 
+ Example: wimgs --wiki en.wikipedia.org --articles my_favorite_articles.txt --images-dir /home/moose/dump/images
  Example with abbreviated options: wimgs -w en.wikipedia.org -i my_favorite_articles.txt -d /home/moose/dump/images
 
  --images-dir defaults to './images'
@@ -36,7 +36,7 @@ Usage:
 3. To dump all images of a particular category on Commons, use --category instead of --articles:
 
  wimgs --wiki commons.wikimedia.org --category "Images from Wiki Loves Africa 2014 in Ghana" --images-dir /home/moose/wlm_gh/images
- 
+
 4. To NOT download the full/original resolution, but a given width, specify the maximum width using --width:
 
  wimgs --wiki tr.wikipedia.org --articles my_favorite_turkish_articles.txt --width 800
@@ -53,12 +53,19 @@ To report issues or contribute to the code, see http://github.com/abartov/wimgs
 end
 def valid_config?(dbcfg, cfg, mode)
   return false if dbcfg[:mode] != mode
-  [:wiki, :list, :width, :imgdir].each {|s| return false if dbcfg[s] != cfg[s] }
+  [:wiki, :list, :width, :imgdir, :dbname].each {|s| return false if dbcfg[s] != cfg[s] }
   return true
 end
 
 def prepare_db(cfg, mode)
-  db = SQLite3::Database.new "wimgs.db"
+
+  # if cfg[:dbname]
+  #   dbname = cfg[:dbname]
+  # else
+  #   dbname = "wimgs.db"
+  # end
+
+  db = SQLite3::Database.new cfg[:dbname]
   db.results_as_hash = true
   # check whether existing DB is from a previous run with same params; clobber if not, or if no-resume specified
   clobber = false
@@ -147,7 +154,7 @@ def get_image(mw, cfg, img)
 end
 
 # main
-cfg = { :list => nil, :imgdir => './images', :resume => true, :status => false, :wiki => nil, :width => nil, :category => nil }
+cfg = { :list => nil, :imgdir => './images', :resume => true, :status => false, :wiki => nil, :width => nil, :category => nil, :dbname => "wimgs.rb" }
 
 opts = GetoptLong.new(
   [ '--help', '-h', GetoptLong::NO_ARGUMENT ],
@@ -157,8 +164,8 @@ opts = GetoptLong.new(
   [ '--no-resume', '-r', GetoptLong::NO_ARGUMENT],
   [ '--status', '-s', GetoptLong::NO_ARGUMENT],
   [ '--wiki', '-w', GetoptLong::REQUIRED_ARGUMENT],
-  [ '--width', '-x', GetoptLong::OPTIONAL_ARGUMENT]
-)
+  [ '--width', '-x', GetoptLong::OPTIONAL_ARGUMENT],
+  [ '--dbname', '-b', GetoptLong::OPTIONAL_ARGUMENT] )
 
 opts.each {|opt, arg|
   case opt
@@ -178,6 +185,8 @@ opts.each {|opt, arg|
       cfg[:category] = arg.gsub(' ','_')
     when '--width'
       cfg[:width] = arg
+    when '--dbname'
+      cfg[:dbname] = arg
   end
 }
 
@@ -192,11 +201,11 @@ mw = MediawikiApi::Client.new("https://#{cfg[:wiki]}/w/api.php")
 
 if mode == 'category'
   print "reading category image list... "
-  resp = category_files(mw, "#{cfg[:category]}") 
+  resp = category_files(mw, "#{cfg[:category]}")
   files = []
   resp.each {|r| files << r if r[0..4] == 'File:'}
   print "done!\nInserting into DB... "
-  files.each {|img| 
+  files.each {|img|
     res = nil
     begin
       res = db.execute("SELECT id FROM images WHERE filename = ?", img)[0] # don't insert dupes
@@ -221,7 +230,7 @@ else
     print "stale database!\nAdding articles from list, removing articles no longer on list, preserving status of existing article rows... "
     db.execute("SELECT id, title FROM articles") do |row|
       puts "DBG: title: #{row['title']}"
-      unless articles.include?(row['title']) 
+      unless articles.include?(row['title'])
         db.execute("DELETE FROM articles WHERE id = #{row['id']}") # delete DB row if not in current list
         db.execute("DELETE FROM images WHERE article_id = #{row['id']}")
       else
@@ -251,7 +260,7 @@ else
       imgs.each do |img|
         db.execute("INSERT INTO images VALUES (NULL, ?, ?, ?, NULL)", row['id'], img, NONE)
       end
-      db.execute("UPDATE articles SET status = ? WHERE id = ?", PARTIAL, row['id']) 
+      db.execute("UPDATE articles SET status = ? WHERE id = ?", PARTIAL, row['id'])
       puts("Noted #{imgs.length} images in article #{row['title']}")
     else
       db.execute("UPDATE articles SET status = ? WHERE id = ?", DONE, row['id'])
@@ -273,7 +282,7 @@ else # category
   puts "Downloading #{stats[:todo]} remaining images... (#{stats[:missing]} missing so far)"
   i = 0
   missing = stats[:missing]
-  imgs = db.execute("SELECT id, filename, status FROM images WHERE status <> ?", DONE) 
+  imgs = db.execute("SELECT id, filename, status FROM images WHERE status <> ?", DONE)
   imgs.each do |img|
     updimg = get_image(mw, cfg, img)
     unless updimg.nil?
@@ -295,4 +304,3 @@ end
 print_stats(db)
 db.close
 puts "wimgs done!"
-

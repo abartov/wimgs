@@ -1,0 +1,4 @@
+#!/bin/sh
+echo Download Images from: $1
+mkdir ./images/$1;
+ruby ./wimgs/wimgs.rb --wiki commons.wikimedia.org --category "$1" --images-dir=images/$1 --dbname "$1.db"
