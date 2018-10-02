@@ -12,7 +12,7 @@ require 'mediawiki_api'
 #require 'media_wiki'
 require 'sqlite3'
 
-VERSION = "0.1 2015-01-13"
+VERSION = "0.2 2018-10-02"
 NONE = 1
 PARTIAL = 2
 DONE = 3
@@ -135,8 +135,8 @@ end
 def get_image(mw, cfg, img)
   begin
     filename = img['filename'][5..-1]
-    outfile = cfg[:imgdir]+"/#{filename}"
-    opts = {iiprop: "url", titles: "#{img['filename']}"}
+    outfile = cfg[:imgdir]+"/#{filename.gsub('"','\"')}"
+    opts = {iiprop: "url", titles: img['filename'].gsub(' ','_')}
     key = "url"
     unless cfg[:width].nil? # download full resolution if no thumbnail width specified
       opts.merge!({iiurlwidth: cfg[:width]})
@@ -144,7 +144,8 @@ def get_image(mw, cfg, img)
     end
     ii = mw.prop(:imageinfo, opts)
     url = ii.data["pages"][ii.data["pages"].keys[0]]["imageinfo"][0][key] # if actual width <= cfg[:width], the original image would be in thumburl
-    `wget -O "#{outfile}" "#{url}"`
+    cmdline = "wget -O \"#{outfile}\" #{url}"
+    system(cmdline)
     return nil unless $?.success?
     img['filepath'] = outfile
     return img
