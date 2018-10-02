@@ -154,7 +154,7 @@ def get_image(mw, cfg, img)
 end
 
 # main
-cfg = { :list => nil, :imgdir => './images', :resume => true, :status => false, :wiki => nil, :width => nil, :category => nil, :dbname => "wimgs" }
+cfg = { :list => nil, :imgdir => './images', :resume => true, :status => false, :wiki => nil, :width => nil, :category => nil, :dbname => "wimgs.db" }
 
 opts = GetoptLong.new(
   [ '--help', '-h', GetoptLong::NO_ARGUMENT ],
