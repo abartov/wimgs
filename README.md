@@ -4,27 +4,27 @@ wimgs - Wiki images downloader
 Usage: 
 
 1. To dump all images for a set of articles with titles listed in UTF-8 in `<fname>` (one per line), from Wiki `<wiki>`, to directory `<dumpdir>`:
-   ```vim
+   ```
    ruby wimgs.rb --wiki <wiki> --articles <fname> --images-dir <dumpdir>
    ```
  
    Example:
-    ```vim
+    ```
     wimgs --wiki en.wikipedia.org --articles my_favorite_articles.txt --images-dir /home/moose/dump/images
     ```
 
    Example with abbreviated options:
-    ```vim
+    ```
     wimgs -w en.wikipedia.org -i my_favorite_articles.txt -d /home/moose/dump/images --images-dir defaults to './images'
     ```
 
 2. To dump all images of a particular category on Commons, use `--category` instead of `--articles`:
-   ```vim
+   ```
    ruby wimgs.rb --wiki commons.wikimedia.org --category "Images from Wiki Loves Africa 2014 in Ghana" --images-dir /home/moose/wlm_gh/images
    ```
 
 3. To NOT download the full/original resolution, but a given width, specify the maximum width using `--width`:
-   ```vim
+   ```
    ruby wimgs.rb --wiki tr.wikipedia.org --articles my_favorite_turkish_articles.txt --width 800
    ```
 
